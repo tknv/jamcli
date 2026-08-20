@@ -17,20 +17,24 @@ makedepends=(
     'pkgconf'
 )
 
-source=()
+source=(
+    "jamcli-${pkgver}.tar.gz"
+)
+
+sha256sums=('SKIP')
 
 build() {
     cmake \
-        -S . \
-        -B build \
+        -S "$srcdir/jamcli-${pkgver}" \
+        -B "$srcdir/jamcli-${pkgver}/build" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr \
         -DCMAKE_INSTALL_SYSCONFDIR=/etc
 
-    cmake --build build
+    cmake --build "$srcdir/jamcli-${pkgver}/build" --parallel
 }
 
 package() {
     DESTDIR="$pkgdir" cmake \
-        --install build
+        --install "$srcdir/jamcli-${pkgver}/build"
 }

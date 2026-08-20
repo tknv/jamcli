@@ -1,8 +1,11 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= Release
 
+VERSION := $(shell cat VERSION 2>/dev/null || echo 1.0.0)
+DIST_DIR := pkg
+
 .PHONY: all configure build clean install uninstall \
-        deb pkg arch package version
+        deb arch package version
 
 all: build
 
@@ -31,10 +34,22 @@ uninstall:
 deb: build
 	cpack --config $(BUILD_DIR)/CPackConfig.cmake -G DEB
 
-pkg arch:
-	makepkg -sf
+arch:
+	@mkdir -p $(DIST_DIR)/arch
+	@rm -rf $(DIST_DIR)/arch/*
+	@tar \
+		--exclude='./.git' \
+		--exclude='./build' \
+		--exclude='./pkg' \
+		--exclude='./*.deb' \
+		--exclude='./*.pkg.tar.zst' \
+		--transform='s,^.,jamcli-$(VERSION),' \
+		-czf $(DIST_DIR)/arch/jamcli-$(VERSION).tar.gz \
+		.
+	@cp PKGBUILD $(DIST_DIR)/arch/
+	@cd $(DIST_DIR)/arch && makepkg -sf
 
-package: deb
+package: deb arch
 	@echo "Packages created."
 
 distclean:
