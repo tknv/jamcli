@@ -66,18 +66,7 @@ and are skipped.
 ## Installation
 
 `jamcli` is built as part of a larger C++ project that links against
-`libjami`. Since this README is generated from a single source file
-(`app.cpp`), refer to the project's build system (e.g. CMake/Makefile)
-for exact build steps; conceptually:
-
-```sh
-# Example only — confirm against the project's actual build files.
-cmake -B build
-cmake --build build
-sudo cmake --install build   # or copy the resulting `jamcli` binary onto your PATH
-```
-
-A man page is available as `jamcli(1)` — see [`jamcli.1`](./jamcli.1).
+`libjami`. Please refer to the project's build system (e.g. CMake/Makefile) 
 
 ## Quick start
 
