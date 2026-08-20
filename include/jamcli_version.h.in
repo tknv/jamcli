@@ -1,0 +1,14 @@
+// Generated file - do not edit by hand.
+//
+// Populated by CMakeLists.txt's configure_file() when building with CMake,
+// or by Makefile.standalone's sed-based substitution when building
+// directly with a compiler (no CMake required). Both read the same two
+// inputs:
+//   - VERSION            the single source of truth for the release number
+//   - `git describe`      commit/tag metadata, when building from a git
+//                          checkout (falls back to "unknown" otherwise,
+//                          e.g. in a source tarball with no .git directory)
+#pragma once
+
+#define JAMCLI_VERSION "@JAMCLI_VERSION@"
+#define JAMCLI_GIT_COMMIT "@JAMCLI_GIT_COMMIT@"

@@ -1,0 +1,85 @@
+# Distro-independent alternative to the CMake-based Makefile.
+#
+# The top-level Makefile wraps `cmake`/`cpack`/`makepkg` and is the
+# recommended path for normal installs and packaging. This file exists
+# for environments where CMake, pkg-config setup for CPack, or Arch's
+# makepkg aren't available/desired - e.g. a quick local build, a minimal
+# container, or a CI job that just needs the binary. It talks to the
+# compiler and pkg-config directly and makes no assumption about which
+# Linux distribution it's running on.
+#
+# Usage:
+#   make -f Makefile.standalone
+#   make -f Makefile.standalone version
+#   make -f Makefile.standalone clean
+
+CXX      ?= g++
+CXXSTD   ?= c++20
+CXXFLAGS ?= -O2 -Wall -Wextra -std=$(CXXSTD)
+LDFLAGS  ?=
+
+# Same ABI-matching defines as CMakeLists.txt's add_compile_definitions().
+CPPFLAGS += -DASIO_STANDALONE -DMSGPACK_NO_BOOST -D_REENTRANT
+
+# libavutil (for AVFrame, used by the video sink target) via pkg-config,
+# same as CMakeLists.txt's pkg_check_modules(AVUTIL ... libavutil).
+AVUTIL_CFLAGS := $(shell pkg-config --cflags libavutil)
+AVUTIL_LIBS   := $(shell pkg-config --libs libavutil)
+CXXFLAGS      += $(AVUTIL_CFLAGS)
+
+# libjami: no standard pkg-config file assumed (CMakeLists.txt uses
+# find_path/find_library instead) - override on the command line if it
+# isn't on the default search path, e.g.:
+#   make -f Makefile.standalone JAMI_INCLUDE_DIR=/opt/jami/include JAMI_LIB_DIR=/opt/jami/lib
+JAMI_INCLUDE_DIR ?=
+JAMI_LIB_DIR     ?=
+ifneq ($(JAMI_INCLUDE_DIR),)
+  CXXFLAGS += -I$(JAMI_INCLUDE_DIR)
+endif
+ifneq ($(JAMI_LIB_DIR),)
+  LDFLAGS  += -L$(JAMI_LIB_DIR)
+endif
+
+LDLIBS := -ljami -lpthread -lrt $(AVUTIL_LIBS)
+
+SRC_DIR       := src
+INC_DIR       := include
+BUILD_DIR     := build-standalone
+GENERATED_DIR := $(BUILD_DIR)/generated
+
+# VERSION is the single source of truth for the release number, shared
+# with CMakeLists.txt; git metadata is appended for traceable dev builds.
+VERSION    := $(shell cat VERSION)
+GIT_COMMIT := $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
+
+SRCS   := $(SRC_DIR)/main.cpp $(SRC_DIR)/app.cpp $(SRC_DIR)/config.cpp \
+          $(SRC_DIR)/utils.cpp $(SRC_DIR)/video.cpp $(SRC_DIR)/terminal_ui.cpp
+OBJS   := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+TARGET := jamcli
+
+.PHONY: all clean install version
+
+all: $(TARGET)
+
+# Regenerate the version header whenever the template or VERSION changes.
+$(GENERATED_DIR)/version.h: $(INC_DIR)/version.h.in VERSION
+	@mkdir -p $(dir $@)
+	@sed -e 's/@JAMCLI_VERSION@/$(VERSION)/' \
+	     -e 's/@JAMCLI_GIT_COMMIT@/$(GIT_COMMIT)/' \
+	     $< > $@
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp $(GENERATED_DIR)/version.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I$(INC_DIR) -I$(GENERATED_DIR) -c $< -o $@
+
+$(TARGET): $(OBJS)
+	$(CXX) $(OBJS) $(LDFLAGS) $(LDLIBS) -o $@
+
+version:
+	@echo "$(VERSION) ($(GIT_COMMIT))"
+
+install: $(TARGET)
+	install -Dm755 $(TARGET) $(DESTDIR)/usr/local/bin/$(TARGET)
+
+clean:
+	rm -rf $(BUILD_DIR) $(TARGET)

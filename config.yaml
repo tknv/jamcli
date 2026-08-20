@@ -1,0 +1,28 @@
+network:
+  interface: as-is
+  upnp: true
+  turn-server: true
+  turn-server-url: "turn.jami.net:3478"
+  turn-server-username: "ring"
+  turn-server-password: "ring"
+  turn-server-realm: "ring"
+  dht-proxy: false
+  dht-proxy-port: "0"
+  local-peer-discovery: true
+  dht-proxy-address: "dhtproxy.jami.net:[80-95]"
+  dht-proxy-list-url: "https://config.jami.net/proxyList"
+  dht-bootstrap-node: "bootstrap.jami.net:4222"
+  jams: disabled
+  jams-server: "ns.jami.net"
+  jams-user: ""
+video:
+  use: true
+  device: as-is
+audio:
+  use: true
+  device: as-is
+  level: as-is
+mic:
+  use: true
+  device: as-is
+  level: as-is
