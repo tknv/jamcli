@@ -1,8 +1,8 @@
-# jamcli
+# jamcli 
 
 A terminal chat, voice, and video client for the [Jami](https://jami.net)
-(libjami / GNU Ring) peer-to-peer messaging network.
-
+(libjami / GNU Ring) peer-to-peer messaging network. 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/tknv/oyatsu-cli)   
 `jamcli` is a slash-command driven, single-binary UI on top of `libjami`.
 It lets you log in to (or create) a Jami account, add and message
 contacts over swarm conversations, send files and inline images, place
