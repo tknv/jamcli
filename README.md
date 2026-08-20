@@ -32,7 +32,7 @@ all from a terminal.
 - An escape hatch to run arbitrary shell commands (`/shell`) without
   leaving the client.
 - Simple line editor: UTF-8 aware cursor movement, backspace, and
-  Shift+Enter for multi-line messages, plus paste-friendly bulk input
+  Alt+Enter for multi-line messages, plus paste-friendly bulk input
   handling.
 
 ## No features  
@@ -48,7 +48,7 @@ grep -RIl --binary-files=without-match -F "<your companion hash>" "$HOME/.local/
 ```bash
 git -C "$HOME/.local/share/jami/<yout account id>/conversations/<the conversation id>" -c i18n.logOutputEncoding=UTF-8 log --all -10 --date=iso-strict --pretty='%H%x09%ad%x09%s%n%b'
 ```
-It will show 10 latest messages.  Then you can reply `/#<message id> your reply message` 
+It will show 10 latest messages.  Then you can reply to by `/#<message id> your reply message` 
 
 ## Requirements
 
@@ -58,6 +58,7 @@ It will show 10 latest messages.  Then you can reply `/#<message id> your reply 
 - **ffmpeg** — required to record push-to-talk voice/video messages.
 - **ffplay** or **mpv** — used to preview incoming media, received
   files/images, and in-progress video-message recordings.
+- **timg** - required to show image inline. E.g. show avatar picuture. 
 - A POSIX environment (the client uses `fork`/`exec`, named pipes,
   `poll`, and raw terminal mode).
 
