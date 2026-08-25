@@ -2101,6 +2101,71 @@ void JamcliApp::cmdAccept(std::istringstream &iss) {
   }
 }
 
+// /delete-hash <companion hash>: removes a contact from the daemon and
+// forgets all local bookkeeping jamcli kept about it (cached conversation
+// id, /list alias, presence state). If we were actively chatting with that
+// contact, the chat is ended first so we don't keep pointing at a
+// companion that's about to be removed.
+void JamcliApp::cmdDeleteHash(std::istringstream &iss) {
+  std::string arg;
+  iss >> arg;
+  if (arg.empty()) {
+    ui_.printSystemMessage(
+        "Usage: /delete-hash <companion hash> (or @<ID> alias from /list)");
+    return;
+  }
+  if (current_account_.empty()) {
+    ui_.printSystemMessage("Login required first.");
+    return;
+  }
+
+  std::string hash = arg;
+  if (hash.front() == '@') {
+    std::string resolved = resolveContactAlias(hash);
+    if (resolved.empty()) {
+      ui_.printSystemMessage(
+          "Unknown contact alias. Use /list first (aliases are @1..@ff).");
+      return;
+    }
+    hash = resolved;
+  }
+
+  // If we're chatting with this contact right now, leave that chat state
+  // first (same cleanup as /e, /end) so companion_ never dangles on a
+  // hash we're about to remove.
+  if (companion_ == hash) {
+    cancelAllPending();
+    resetLocalComposing();
+    companion_.clear();
+    mode_ = UiMode::MESSAGE;
+    ui_.setMode(mode_);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(conv_mutex_);
+    uri_to_conversation_.erase(hash);
+  }
+  {
+    std::lock_guard<std::mutex> lock(contact_alias_mutex_);
+    for (auto it = contact_aliases_.begin(); it != contact_aliases_.end();) {
+      if (it->second == hash)
+        it = contact_aliases_.erase(it);
+      else
+        ++it;
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(presence_mutex_);
+    online_contacts_.erase(hash);
+  }
+
+  const std::string account = current_account_;
+  fireAndForgetLibjamiCall([account, hash] {
+    libjami::removeContact(account, hash, /*ban=*/false);
+  });
+  ui_.printSystemMessage("Removed contact: " + hash);
+}
+
 void JamcliApp::cmdChat(std::istringstream &iss) {
   if (mode_ == UiMode::SETTING) {
     ui_.printSystemMessage("Login required first.");
@@ -2207,6 +2272,23 @@ void JamcliApp::cmdVideoMessage(std::istringstream &) {
 void JamcliApp::cmdEndChat(std::istringstream &) { endChat(); }
 
 void JamcliApp::cmdQuit(std::istringstream &) { handleQuit(); }
+
+// /flush: clears every local "id" record (messages, replies, received/sent
+// files, avatar downloads - anything logged into message_log_ and tagged
+// via id_ring_) and resets id_ring_ itself, so the very next logged item
+// gets the first id again instead of continuing on from wherever the ring
+// had gotten to. This is purely local jamcli bookkeeping: nothing is sent
+// to the daemon or the peer, and existing /open<ID>, /del@<ID>, or /@<ID>
+// references typed after a flush will no longer resolve to anything.
+void JamcliApp::cmdFlush(std::istringstream &) {
+  {
+    std::lock_guard<std::mutex> lock(msg_mutex_);
+    message_log_.clear();
+    id_ring_.reset();
+  }
+  ui_.printSystemMessage(
+      "Flushed message/file/avatar id log. IDs restart from the beginning.");
+}
 
 // Trailing free-text argument (e.g. a file path or a name), with the
 // single separating space stripped. Shared by every command whose
@@ -2376,6 +2458,7 @@ void JamcliApp::processInputLine(const std::string &line) {
                                          "/list [all]",
                                          "/add <user hash>",
                                          "/accept <user>  (/ac)",
+                                         "/delete-hash <companion hash>",
                                          "/chat @<ID>",
                                          "/add-img <file>",
                                          "/give-displayName <name>",
@@ -2391,6 +2474,7 @@ void JamcliApp::processInputLine(const std::string &line) {
                                          "/am",
                                          "/vm",
                                          "/e  (/end)",
+                                         "/flush",
                                          "/quit  (/q)",
                                          "/#<Jami commit ID> <reply text>",
                                          "/@<local ID> <reply text>",
@@ -2416,6 +2500,7 @@ void JamcliApp::processInputLine(const std::string &line) {
         {{"/list"}, &JamcliApp::cmdList},
         {{"/add"}, &JamcliApp::cmdAdd},
         {{"/accept", "/ac"}, &JamcliApp::cmdAccept},
+        {{"/delete-hash"}, &JamcliApp::cmdDeleteHash},
         {{"/chat"}, &JamcliApp::cmdChat},
         {{"/add-img"}, &JamcliApp::cmdAddImg},
         {{"/give-displayname"}, &JamcliApp::cmdGiveDisplayName},
@@ -2431,6 +2516,7 @@ void JamcliApp::processInputLine(const std::string &line) {
         {{"/am"}, &JamcliApp::cmdAudioMessage},
         {{"/vm"}, &JamcliApp::cmdVideoMessage},
         {{"/e", "/end"}, &JamcliApp::cmdEndChat},
+        {{"/flush"}, &JamcliApp::cmdFlush},
         {{"/quit", "/q"}, &JamcliApp::cmdQuit},
         {{"/me"}, &JamcliApp::cmdMe},
     };

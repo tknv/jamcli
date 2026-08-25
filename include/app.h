@@ -184,6 +184,7 @@ private:
   void cmdList(std::istringstream &iss);
   void cmdAdd(std::istringstream &iss);
   void cmdAccept(std::istringstream &iss);
+  void cmdDeleteHash(std::istringstream &iss);
   void cmdChat(std::istringstream &iss);
   void cmdAddImg(std::istringstream &iss);
   void cmdGiveDisplayName(std::istringstream &iss);
@@ -201,6 +202,12 @@ private:
   void cmdEndChat(std::istringstream &);
   void cmdQuit(std::istringstream &);
   void cmdMe(std::istringstream &);
+  // /flush: clears the local id_ring_/message_log_ bookkeeping used for
+  // /open<ID>, /del@<ID>, /@<ID> replies, etc. Purely local housekeeping -
+  // it does not touch the daemon, contacts, or conversations. After this,
+  // the next logged message/file/avatar starts numbering from the first id
+  // again.
+  void cmdFlush(std::istringstream &);
 
   // Trailing free-text argument (e.g. a file path or a name), with the
   // single separating space stripped. Shared by every command whose

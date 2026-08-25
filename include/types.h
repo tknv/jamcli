@@ -101,6 +101,15 @@ public:
         ++counter_;
         return std::string(buf);
     }
+
+    // Restarts the ring so the next next() call returns "01" again. Used by
+    // /flush. mutex_ makes MessageIdRing non-copyable/non-assignable, so this
+    // is the supported way to reset it (rather than assigning a fresh
+    // instance over an existing one).
+    void reset() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        counter_ = 1;
+    }
 private:
     std::mutex mutex_;
     unsigned counter_ {1};
