@@ -40,13 +40,20 @@ jobs:
             cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/jami-install
             make -j$(nproc)
             make install
+            # Debug: find where libjami actually is
+            find ${{ github.workspace }}/jami-install -name "libjami*" -o -name "jami.h"
+            find . -name "libjami*" -o -name "jami.h" | head -20
 
       - name: Configure
         run: |
+            # Set the correct paths where jami-daemon actually installs files
+            export JAMI_INCLUDE_DIR=$(find ${{ github.workspace }}/jami-install -name "jami.h" -printf '%h' -quit)
+            export JAMI_LIBRARY=$(find ${{ github.workspace }}/jami-install -name "libjami.so*" -print -quit)
             cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=/usr \
-                -DCMAKE_PREFIX_PATH=${{ github.workspace }}/jami-install
+                -DJAMI_INCLUDE_DIR="$JAMI_INCLUDE_DIR" \
+                -DJAMI_LIBRARY="$JAMI_LIBRARY"
 
       - name: Build
         run: cmake --build build -j$(nproc)
