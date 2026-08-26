@@ -37,15 +37,16 @@ jobs:
             git clone --depth=1 --single-branch --branch master https://review.jami.net/jami-daemon.git
             cd jami-daemon
             mkdir build && cd build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/jami-install
             make -j$(nproc)
-            sudo make install
+            sudo make install DESTDIR=${{ github.workspace }}/jami-install
 
       - name: Configure
         run: |
-            export JAMI_INCLUDE_DIR=/usr/include/jami
-            export JAMI_LIBRARY=/usr/lib/libjami.so
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=/usr \
+                -DCMAKE_PREFIX_PATH=${{ github.workspace }}/jami-install/usr
 
       - name: Build
         run: cmake --build build -j$(nproc)
