@@ -43,8 +43,8 @@ jobs:
 
       - name: Configure
         run: |
-            export JAMI_INCLUDE_DIR=/usr/local/include/jami
-            export JAMI_LIBRARY=/usr/local/lib/libjami.so
+            export JAMI_INCLUDE_DIR=/usr/include/jami
+            export JAMI_LIBRARY=/usr/lib/libjami.so
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 
       - name: Build
