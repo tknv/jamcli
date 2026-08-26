@@ -39,14 +39,14 @@ jobs:
             mkdir build && cd build
             cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/jami-install
             make -j$(nproc)
-            sudo make install DESTDIR=${{ github.workspace }}/jami-install
+            make install
 
       - name: Configure
         run: |
             cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_INSTALL_PREFIX=/usr \
-                -DCMAKE_PREFIX_PATH=${{ github.workspace }}/jami-install/usr
+                -DCMAKE_PREFIX_PATH=${{ github.workspace }}/jami-install
 
       - name: Build
         run: cmake --build build -j$(nproc)
