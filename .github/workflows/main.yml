@@ -9,51 +9,31 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up CMake
-        run: sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config ffmpeg libcppunit-dev
-
-      - name: Install dependencies
+      - name: Install base dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-                git cmake build-essential pkg-config \
-                libtool autoconf automake autopoint gettext gettext-base libgnutls28-dev \
-                libssl-dev libdbus-1-dev libexpat1-dev \
-                ffmpeg libavutil-dev \
-                libudev-dev libpulse-dev libasound2-dev libjack-dev \
-                libv4l-dev v4l-utils libdrm-dev \
-                libxcb1-dev libx11-dev libxext-dev libxfixes-dev \
-                libyaml-cpp-dev yasm nasm libpipewire-0.3-dev libva-dev \
-                libvdpau-dev cargo
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel cmake git pkgconf
 
-      - name: Build Jami from source
+      - name: Install Jami daemon
         run: |
-            git config --global http.postBuffer 524288000
-            git clone --depth=1 --single-branch --branch master https://review.jami.net/jami-daemon.git
-            cd jami-daemon
-            mkdir build && cd build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/jami-install
-            make -j$(nproc)
-            make install
-            # Debug: find where libjami actually is
-            find ${{ github.workspace }}/jami-install -name "libjami*" -o -name "jami.h"
-            find . -name "libjami*" -o -name "jami.h" | head -20
+          pacman -S --noconfirm jami-daemon ffmpeg
+
+      - name: Install DEB packaging tools
+        run: |
+          pacman -S --noconfirm dpkg
 
       - name: Configure
         run: |
-            # Set the correct paths where jami-daemon actually installs files
-            export JAMI_INCLUDE_DIR=$(find ${{ github.workspace }}/jami-install -name "jami.h" -printf '%h' -quit)
-            export JAMI_LIBRARY=$(find ${{ github.workspace }}/jami-install -name "libjami.so*" -print -quit)
-            cmake -S . -B build \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_INSTALL_PREFIX=/usr \
-                -DJAMI_INCLUDE_DIR="$JAMI_INCLUDE_DIR" \
-                -DJAMI_LIBRARY="$JAMI_LIBRARY"
+          cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr
 
       - name: Build
         run: cmake --build build -j$(nproc)

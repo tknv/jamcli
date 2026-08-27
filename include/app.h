@@ -65,6 +65,12 @@ private:
   void registerJamiSignalHandlers();
   void cacheConversationMembers(const std::string &conversationId);
   std::string resolveConversationId(const std::string &peerUri);
+  // Applies a single conversationInfos key ("title" / "description" /
+  // "avatar") to whatever conversation the current companion_ points at
+  // (used by /add-group-name, /add-group-discription, /add-group-photo).
+  // `label` is only used for the user-facing confirmation/usage text.
+  void updateActiveGroupInfo(const std::string &key, const std::string &value,
+                             const std::string &label);
   void startLocalPreview(const std::string &peer);
   void stopLocalPreview();
   void requestViewClose();
@@ -185,10 +191,16 @@ private:
   void cmdAdd(std::istringstream &iss);
   void cmdAccept(std::istringstream &iss);
   void cmdDeleteHash(std::istringstream &iss);
+  void cmdCreateGroup(std::istringstream &iss);
+  void cmdDeleteGroup(std::istringstream &iss);
   void cmdChat(std::istringstream &iss);
   void cmdAddImg(std::istringstream &iss);
   void cmdGiveDisplayName(std::istringstream &iss);
   void cmdGiveRegisterName(std::istringstream &iss);
+  // ---- Group conversation metadata (call while /chat'd into the group) ----
+  void cmdAddGroupName(std::istringstream &iss);
+  void cmdAddGroupDescription(std::istringstream &iss);
+  void cmdAddGroupPhoto(std::istringstream &iss);
   void cmdAudioCall(std::istringstream &);
   void cmdVideoCall(std::istringstream &);
   void cmdReceive(std::istringstream &);

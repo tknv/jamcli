@@ -861,8 +861,16 @@ std::string JamcliApp::resolveConversationId(const std::string &peerUri) {
   if (current_account_.empty())
     return "";
 
+  // Group chats: /chat sets companion_ (passed in here as peerUri) directly
+  // to the group's own conversation id rather than a contact's peer uri, so
+  // it never shows up as a value in uri_to_conversation_ (that map is only
+  // ever populated from 2-member/1:1 conversations - see
+  // cacheConversationMembers). If peerUri already names a live conversation,
+  // that conversation *is* the target.
   for (const auto &conversationId :
        libjami::getConversations(current_account_)) {
+    if (conversationId == peerUri)
+      return conversationId;
     cacheConversationMembers(conversationId);
   }
 
@@ -2166,6 +2174,116 @@ void JamcliApp::cmdDeleteHash(std::istringstream &iss) {
   ui_.printSystemMessage("Removed contact: " + hash);
 }
 
+// /create-group <group name> (/cg): starts a new (initially solo) swarm
+// group conversation and names it. Does NOT switch into it - use /chat
+// with the id printed below (or its /list alias) to actually join it.
+void JamcliApp::cmdCreateGroup(std::istringstream &iss) {
+  std::string name = restOfLine(iss);
+  if (name.empty()) {
+    ui_.printSystemMessage(
+        "Usage: /create-group <group name> (or /cg <group name>)");
+    return;
+  }
+  if (current_account_.empty()) {
+    ui_.printSystemMessage("Login required first.");
+    return;
+  }
+
+  const std::string account = current_account_;
+  fireAndForgetLibjamiCall([this, account, name] {
+    try {
+      const std::string conversationId = libjami::startConversation(account);
+      if (conversationId.empty()) {
+        ui_.printSystemMessage("Failed to create group \"" + name + "\".");
+        return;
+      }
+      libjami::updateConversationInfos(account, conversationId,
+                                       {{"title", name}});
+      ui_.printSystemMessage("Created group \"" + name + "\" (id " +
+                             conversationId + "). Use /chat " +
+                             conversationId +
+                             " (or its /list alias) to join it.");
+    } catch (const std::exception &e) {
+      ui_.printSystemMessage(std::string("/create-group failed: ") +
+                             e.what());
+    } catch (...) {
+      ui_.printSystemMessage("/create-group failed: unknown error");
+    }
+  });
+}
+
+// /delete-group <group name> (/dg): accepts either the group's raw
+// conversation id (as printed by /create-group or shown in /list) or its
+// title. If the title matches more than one group, asks for the id
+// instead rather than guessing which one was meant.
+void JamcliApp::cmdDeleteGroup(std::istringstream &iss) {
+  std::string arg = restOfLine(iss);
+  if (arg.empty()) {
+    ui_.printSystemMessage(
+        "Usage: /delete-group <group name> (or /dg <group name>)");
+    return;
+  }
+  if (current_account_.empty()) {
+    ui_.printSystemMessage("Login required first.");
+    return;
+  }
+
+  const std::string account = current_account_;
+  std::vector<std::string> conversations;
+  try {
+    conversations = libjami::getConversations(account);
+  } catch (const std::exception &e) {
+    ui_.printSystemMessage(std::string("/delete-group failed: ") + e.what());
+    return;
+  }
+
+  std::string conversationId;
+  if (std::find(conversations.begin(), conversations.end(), arg) !=
+      conversations.end()) {
+    conversationId = arg;
+  } else {
+    std::vector<std::string> matches;
+    for (const auto &id : conversations) {
+      std::map<std::string, std::string> infos;
+      try {
+        infos = libjami::conversationInfos(account, id);
+      } catch (...) {
+        continue;
+      }
+      auto it = infos.find("title");
+      if (it != infos.end() && it->second == arg)
+        matches.push_back(id);
+    }
+    if (matches.empty()) {
+      ui_.printSystemMessage("No group named \"" + arg + "\" found.");
+      return;
+    }
+    if (matches.size() > 1) {
+      ui_.printSystemMessage(
+          "Multiple groups are named \"" + arg +
+          "\". Use its conversation id instead (see /list).");
+      return;
+    }
+    conversationId = matches.front();
+  }
+
+  // If we're chatting in this group right now, leave that chat state first
+  // (same cleanup /e and /delete-hash do) so companion_ never dangles on a
+  // conversation we're about to remove.
+  if (companion_ == conversationId) {
+    cancelAllPending();
+    resetLocalComposing();
+    companion_.clear();
+    mode_ = UiMode::MESSAGE;
+    ui_.setMode(mode_);
+  }
+
+  fireAndForgetLibjamiCall([account, conversationId] {
+    libjami::removeConversation(account, conversationId);
+  });
+  ui_.printSystemMessage("Deleted group: " + arg);
+}
+
 void JamcliApp::cmdChat(std::istringstream &iss) {
   if (mode_ == UiMode::SETTING) {
     ui_.printSystemMessage("Login required first.");
@@ -2174,17 +2292,33 @@ void JamcliApp::cmdChat(std::istringstream &iss) {
   std::string target;
   iss >> target;
   if (target.empty()) {
-    ui_.printSystemMessage("Usage: /chat @<ID> (for example /chat @02)");
+    ui_.printSystemMessage(
+        "Usage: /chat @<ID> (for example /chat @02), or /chat <conversation "
+        "id> to join a group directly");
     return;
   }
-  target = resolveContactAlias(target);
-  if (target.empty()) {
-    ui_.printSystemMessage(
-        "Unknown contact alias. Use /list first (aliases are @1..@ff).");
-    return;
+  std::string resolved = resolveContactAlias(target);
+  if (resolved.empty()) {
+    // Not a short @<ID> alias (from /list) - accept it as-is if it looks
+    // like a full hash/conversation id, e.g. a group id printed by
+    // /create-group.
+    std::string raw = target;
+    if (raw.front() == '@')
+      raw.erase(0, 1);
+    const bool looksLikeId =
+        raw.size() > 2 &&
+        std::all_of(raw.begin(), raw.end(), [](unsigned char c) {
+          return std::isxdigit(c);
+        });
+    if (!looksLikeId) {
+      ui_.printSystemMessage(
+          "Unknown contact alias. Use /list first (aliases are @1..@ff).");
+      return;
+    }
+    resolved = raw;
   }
   resetLocalComposing(); // notify the old companion before switching
-  companion_ = target;
+  companion_ = resolved;
   mode_ = UiMode::COMPANION;
   ui_.setMode(mode_, displayNameOrHash(companion_));
 
@@ -2203,6 +2337,98 @@ void JamcliApp::cmdAddImg(std::istringstream &iss) {
   } else {
     updateOwnAvatar(path);
   }
+}
+
+// /add-group-name <group name> (/agn): renames the group we're currently
+// /chat'd into. Only meaningful once inside a group (see /chat <id>).
+void JamcliApp::cmdAddGroupName(std::istringstream &iss) {
+  std::string name = restOfLine(iss);
+  if (name.empty()) {
+    ui_.printSystemMessage(
+        "Usage: /add-group-name <group name> (or /agn <group name>)");
+    return;
+  }
+  updateActiveGroupInfo("title", name, "name");
+}
+
+// /add-group-discription <group discription> (/agd): sets the description
+// of the group we're currently /chat'd into.
+void JamcliApp::cmdAddGroupDescription(std::istringstream &iss) {
+  std::string description = restOfLine(iss);
+  if (description.empty()) {
+    ui_.printSystemMessage("Usage: /add-group-discription <group "
+                           "discription> (or /agd <group discription>)");
+    return;
+  }
+  updateActiveGroupInfo("description", description, "description");
+}
+
+// /add-group-photo <file path> (/agp): sets the avatar/photo of the group
+// we're currently /chat'd into. Unlike /add-img (account avatar, sent as a
+// path), a conversation avatar travels inline as base64 in the
+// conversation's profile.vcf, so the file is read and encoded first (see
+// readFileAsBase64() in utils.cpp).
+void JamcliApp::cmdAddGroupPhoto(std::istringstream &iss) {
+  std::string path = restOfLine(iss);
+  if (path.empty()) {
+    ui_.printSystemMessage(
+        "Usage: /add-group-photo <file path> (or /agp <file path>)");
+    return;
+  }
+  struct stat st{};
+  if (::stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+    ui_.printSystemMessage("Photo file not found: " + path);
+    return;
+  }
+  if (!isImageExt(fileExtension(path))) {
+    ui_.printSystemMessage("Unsupported photo image type: " + path);
+    return;
+  }
+  std::string encoded;
+  if (!readFileAsBase64(path, encoded)) {
+    ui_.printSystemMessage("Could not read photo file: " + path);
+    return;
+  }
+  updateActiveGroupInfo("avatar", encoded, "photo");
+}
+
+// Shared by the three /add-group-* commands above: pushes a single
+// conversationInfos key onto whatever conversation companion_ currently
+// points at (i.e. the group we're /chat'd into).
+void JamcliApp::updateActiveGroupInfo(const std::string &key,
+                                      const std::string &value,
+                                      const std::string &label) {
+  if (mode_ != UiMode::COMPANION || companion_.empty()) {
+    ui_.printSystemMessage(
+        "Not in a chat. Use /chat <id> to join a group first.");
+    return;
+  }
+  if (current_account_.empty()) {
+    ui_.printSystemMessage("Login required first.");
+    return;
+  }
+  const std::string conversationId = resolveConversationId(companion_);
+  if (conversationId.empty()) {
+    ui_.printSystemMessage(
+        "No swarm conversation found for the current chat.");
+    return;
+  }
+
+  const std::string account = current_account_;
+  fireAndForgetLibjamiCall([this, account, conversationId, key, value,
+                            label] {
+    try {
+      libjami::updateConversationInfos(account, conversationId,
+                                       {{key, value}});
+      ui_.printSystemMessage("Group " + label + " updated.");
+    } catch (const std::exception &e) {
+      ui_.printSystemMessage("Could not update group " + label + ": " +
+                             e.what());
+    } catch (...) {
+      ui_.printSystemMessage("Could not update group " + label +
+                             ": unknown error");
+    }
+  });
 }
 
 void JamcliApp::cmdGiveDisplayName(std::istringstream &iss) {
@@ -2459,10 +2685,15 @@ void JamcliApp::processInputLine(const std::string &line) {
                                          "/add <user hash>",
                                          "/accept <user>  (/ac)",
                                          "/delete-hash <companion hash>",
+                                         "/create-group <group name>  (/cg)",
+                                         "/delete-group <group name>  (/dg)",
                                          "/chat @<ID>",
                                          "/add-img <file>",
                                          "/give-displayName <name>",
                                          "/give-registerName <name>",
+                                         "/add-group-name <name>  (/agn)",
+                                         "/add-group-discription <text>  (/agd)",
+                                         "/add-group-photo <file>  (/agp)",
                                          "/audio-call  (/acal)",
                                          "/video-call  (/vcal)",
                                          "/receive  (/r)",
@@ -2501,10 +2732,15 @@ void JamcliApp::processInputLine(const std::string &line) {
         {{"/add"}, &JamcliApp::cmdAdd},
         {{"/accept", "/ac"}, &JamcliApp::cmdAccept},
         {{"/delete-hash"}, &JamcliApp::cmdDeleteHash},
+        {{"/create-group", "/cg"}, &JamcliApp::cmdCreateGroup},
+        {{"/delete-group", "/dg"}, &JamcliApp::cmdDeleteGroup},
         {{"/chat"}, &JamcliApp::cmdChat},
         {{"/add-img"}, &JamcliApp::cmdAddImg},
         {{"/give-displayname"}, &JamcliApp::cmdGiveDisplayName},
         {{"/give-registername"}, &JamcliApp::cmdGiveRegisterName},
+        {{"/add-group-name", "/agn"}, &JamcliApp::cmdAddGroupName},
+        {{"/add-group-discription", "/agd"}, &JamcliApp::cmdAddGroupDescription},
+        {{"/add-group-photo", "/agp"}, &JamcliApp::cmdAddGroupPhoto},
         {{"/audio-call", "/acal"}, &JamcliApp::cmdAudioCall},
         {{"/video-call", "/vcal"}, &JamcliApp::cmdVideoCall},
         {{"/receive", "/r"}, &JamcliApp::cmdReceive},
@@ -2824,6 +3060,90 @@ void JamcliApp::listUsers(bool show_all) {
       if (shown == 0) {
         ui_.printSystemMessage(show_all ? "No contacts found."
                                         : "No confirmed contacts online.");
+      }
+
+      /*
+       * Groups: swarm conversations that aren't a 1:1 contact chat (those
+       * always have exactly 2 members - see cacheConversationMembers() -
+       * and are already listed above). This also picks up a group right
+       * after /create-group, before anyone else has joined, since it only
+       * has 1 member (ourselves) at that point.
+       *
+       * Aliases continue from wherever the contact list above left off, so
+       * /chat @<ID> works the same way for a group as it does for a
+       * contact.
+       */
+      ui_.printSystemMessage("--- Groups ---");
+      int groupsShown = 0;
+      for (const auto &conversationId : libjami::getConversations(account)) {
+        if (alias > 0xFF)
+          break;
+
+        std::vector<std::map<std::string, std::string>> members;
+        try {
+          members = libjami::getConversationMembers(account, conversationId);
+        } catch (...) {
+          continue;
+        }
+        if (members.size() == 2)
+          continue; // 1:1 contact conversation, already shown above
+
+        std::map<std::string, std::string> infos;
+        try {
+          infos = libjami::conversationInfos(account, conversationId);
+        } catch (...) {
+        }
+
+        std::string title;
+        auto titleIt = infos.find("title");
+        if (titleIt != infos.end() && !titleIt->second.empty())
+          title = titleIt->second;
+        else
+          title = "(unnamed group)";
+
+        std::string description;
+        auto descIt = infos.find("description");
+        if (descIt != infos.end())
+          description = descIt->second;
+
+        const std::string shortAlias = aliasForIndex(alias);
+        {
+          std::lock_guard<std::mutex> lock(contact_alias_mutex_);
+          contact_aliases_[static_cast<unsigned>(alias)] = conversationId;
+        }
+
+        std::string avatarId;
+        auto avatarIt = infos.find("avatar");
+        if (avatarIt != infos.end() && !avatarIt->second.empty()) {
+          std::string path;
+          if (writeAvatarBase64ToTemp(avatarIt->second, path)) {
+            std::string extPath = path + ".jpg";
+            ::rename(path.c_str(), extPath.c_str());
+            avatarId = logAvatarFile(extPath, "avatar.jpg", conversationId);
+          }
+        }
+
+        /*
+         * Display:
+         *
+         * <@01> [Group] Name | Members: N | Id: xxxx | Description: xxxx
+         */
+        std::string line = "<@" + shortAlias + "> [Group] " + title +
+                            " | Members: " + std::to_string(members.size()) +
+                            " | Id: " + conversationId;
+        if (!description.empty())
+          line += " | Description: " + description;
+        if (!avatarId.empty())
+          line += " [avatar: " + avatarId + "]";
+
+        ui_.printSystemMessage(line);
+
+        ++groupsShown;
+        ++alias;
+      }
+
+      if (groupsShown == 0) {
+        ui_.printSystemMessage("No groups found.");
       }
 
       /*

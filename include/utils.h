@@ -29,6 +29,8 @@ std::vector<uint8_t> decodeBase64(const std::string& input);
 
 bool writeAvatarBase64ToTemp(const std::string& encoded, std::string& outPath);
 
+bool readFileAsBase64(const std::string& path, std::string& outBase64);
+
 enum class WireMsgType : uint32_t {
     FRAME   = 1,
     CONTROL = 2,

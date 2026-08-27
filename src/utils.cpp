@@ -127,6 +127,19 @@ bool writeAvatarBase64ToTemp(const std::string& encoded, std::string& outPath) {
     return true;
 }
 
+// Reads the whole file at `path` and base64-encodes it into `outBase64`,
+// ready to hand to libjami as an inline avatar/photo payload (e.g.
+// conversationInfos' "avatar" key). Counterpart to writeAvatarBase64ToTemp()
+// above, which goes the other way: base64 -> temp file on disk.
+bool readFileAsBase64(const std::string& path, std::string& outBase64) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
+    std::string raw((std::istreambuf_iterator<char>(file)),
+                     std::istreambuf_iterator<char>());
+    outBase64 = base64Encode(raw);
+    return true;
+}
+
 bool writeWireMsg(int fd, WireMsgType type, const void* payload, uint32_t len) {
     uint32_t hdr[2] = {htonl(static_cast<uint32_t>(type)), htonl(len)};
     if (!writeAll(fd, hdr, sizeof(hdr))) return false;
