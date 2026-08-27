@@ -67,10 +67,21 @@ private:
   std::string resolveConversationId(const std::string &peerUri);
   // Applies a single conversationInfos key ("title" / "description" /
   // "avatar") to whatever conversation the current companion_ points at
-  // (used by /add-group-name, /add-group-discription, /add-group-photo).
-  // `label` is only used for the user-facing confirmation/usage text.
+  // (used by /add-group-discription, /add-group-photo; /add-group-name has
+  // its own body so it can also refresh the prompt - see cmdAddGroupName).
   void updateActiveGroupInfo(const std::string &key, const std::string &value,
                              const std::string &label);
+  // True if conversationId has more (or fewer) than exactly 2 members -
+  // i.e. it's a group rather than a plain 1:1 contact chat (those always
+  // have exactly 2 members - see cacheConversationMembers()). When true and
+  // infosOut is non-null, also fills it with conversationInfos()
+  // (title/description/avatar).
+  bool isGroupConversation(const std::string &conversationId,
+                           std::map<std::string, std::string> *infosOut = nullptr);
+  // Shared by /add-group-member and /delete-group-member: resolves `arg`
+  // (an @<ID> alias or a raw contact hash) and adds/removes it as a member
+  // of whatever group companion_ currently points at.
+  void addOrRemoveGroupMember(const std::string &arg, bool add);
   void startLocalPreview(const std::string &peer);
   void stopLocalPreview();
   void requestViewClose();
@@ -201,6 +212,9 @@ private:
   void cmdAddGroupName(std::istringstream &iss);
   void cmdAddGroupDescription(std::istringstream &iss);
   void cmdAddGroupPhoto(std::istringstream &iss);
+  void cmdMember(std::istringstream &);
+  void cmdAddGroupMember(std::istringstream &iss);
+  void cmdDeleteGroupMember(std::istringstream &iss);
   void cmdAudioCall(std::istringstream &);
   void cmdVideoCall(std::istringstream &);
   void cmdReceive(std::istringstream &);
