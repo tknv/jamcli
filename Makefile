@@ -47,7 +47,7 @@ arch:
 		-czf $(DIST_DIR)/arch/jamcli-$(VERSION).tar.gz \
 		.
 	@cp PKGBUILD $(DIST_DIR)/arch/
-	@cd $(DIST_DIR)/arch && makepkg -sf
+	@cd $(DIST_DIR)/arch && makepkg -sf --chown nobody
 
 package: deb arch
 	@echo "Packages created."

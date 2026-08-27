@@ -41,8 +41,14 @@ jobs:
       - name: Create DEB package
         run: cpack --config build/CPackConfig.cmake -G DEB
 
+      - name: Setup build user
+        run: |
+          useradd -m builduser
+          echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builduser:builduser /github/workspace
+
       - name: Create Arch package
-        run: make arch
+        run: su - builduser -c "cd /github/workspace && make arch"
 
       - name: Create source archives
         run: |
